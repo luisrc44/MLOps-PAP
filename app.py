@@ -1,80 +1,88 @@
-import uvicorn
-from fastapi import FastAPI
-import pickle
-import numpy as np
 import pandas as pd
-from scipy.stats import chi2_contingency, ks_2samp
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import VotingClassifier
+from sklearn.linear_model import LogisticRegression
+import xgboost as xgb
+from sklearn.metrics import f1_score, accuracy_score, classification_report, roc_auc_score
+from sklearn.ensemble import RandomForestClassifier
 
-app = FastAPI()
+def load_data(file_path):
+    """Carga el dataset desde un archivo CSV"""
+    data = pd.read_csv(file_path)
+    X = data.drop('Y', axis=1)
+    y = data['Y']
+    return X, y
 
-# Cargar el modelo y el escalador
-model = pickle.load(open('./models/ensemble_model.pkl', 'rb'))
-scaler = pickle.load(open('./models/scaler.pkl', 'rb'))
+def scale_data(X_train, X_test):
+    """Escala los datos usando StandardScaler"""
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    return X_train_scaled, X_test_scaled, scaler
 
-# Ruta de saludo
-@app.get("/")
-def greet(name: str):
-    return {
-        "message": f"Hello, {name}!"
-    }
+def build_models():
+    """Define los modelos a utilizar en el VotingClassifier"""
+    xgb_model = xgb.XGBClassifier(
+        scale_pos_weight=1,  # Ajuste según balance de clases
+        n_estimators=1000,
+        max_depth=5,
+        learning_rate=0.001,
+        eval_metric='logloss',
+        use_label_encoder=False,
+        random_state=1234
+    )
 
-# Verificación de salud del servidor
-@app.get("/health")
-def health_check():
-    return {
-        "status": "OK"
-    }
+    rf_model = RandomForestClassifier(n_estimators=100, random_state=1234)
 
-# Ruta de predicción
-@app.post("/predict")
-def predict(data: list[float]):
-    # Crear un DataFrame a partir de los datos de entrada
-    X = [{
-        f"X{i+1}": x
-        for i, x in enumerate(data)
-    }]
+    lr_model = LogisticRegression(penalty='l2', C=0.1, solver='liblinear')
+
+    ensemble_model = VotingClassifier(
+        estimators=[('xgb', xgb_model), ('rf', rf_model), ('lr', lr_model)], 
+        voting='soft'
+    )
     
-    df = pd.DataFrame.from_records(X)
+    return ensemble_model
+
+def evaluate_model(model, X_train, X_test, y_train, y_test, threshold=0.45):
+    """Evalúa el modelo, ajustando el umbral de decisión"""
+    # Predicciones con probabilidades
+    probas_train = model.predict_proba(X_train)[:, 1]
+    y_hat_train = (probas_train > threshold).astype(int)
+
+    probas_test = model.predict_proba(X_test)[:, 1]
+    y_hat_test = (probas_test > threshold).astype(int)
+
+    # Métricas
+    f1_train = f1_score(y_train, y_hat_train)
+    f1_test = f1_score(y_test, y_hat_test)
+    accuracy_train = accuracy_score(y_train, y_hat_train)
+    accuracy_test = accuracy_score(y_test, y_hat_test)
+
+    # Resultados
+    print(f"F1 Score Train: {f1_train:.2f}")
+    print(f"F1 Score Test: {f1_test:.2f}")
+    print(f"Accuracy Train: {accuracy_train:.2f}")
+    print(f"Accuracy Test: {accuracy_test:.2f}")
+    print("\nClasificación detallada:\n", classification_report(y_test, y_hat_test))
+    print(f"ROC AUC: {roc_auc_score(y_test, probas_test):.2f}")
+
+def main():
+    # Cargar los datos
+    X, y = load_data("credit_train.csv")
+
+    # Dividir los datos en entrenamiento y prueba
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=1234)
 
     # Escalar los datos
-    df_scaled = scaler.transform(df)
+    X_train_scaled, X_test_scaled, scaler = scale_data(X_train, X_test)
 
-    # Realizar la predicción
-    prediction = model.predict(df_scaled)
-    
-    # Guardar los nuevos puntos de datos en un archivo CSV para futuras actualizaciones del dataset
-    df['prediction'] = prediction
-    df.to_csv('new_data.csv', mode='a', header=False, index=False)
+    # Construir y entrenar el modelo de ensamble
+    ensemble_model = build_models()
+    ensemble_model.fit(X_train_scaled, y_train)
 
-    return {
-        "prediction": int(prediction[0])
-    }
-
-# Aplicar pruebas estadísticas
-@app.post("/stat_tests")
-def stat_tests(data1: list[float], data2: list[float]):
-    # Convertir los datos de entrada en arrays de numpy para las pruebas estadísticas
-    data1 = np.array(data1)
-    data2 = np.array(data2)
-
-    # Prueba Chi-cuadrado
-    chi2_stat, p_val_chi2, _, _ = chi2_contingency([data1, data2])
-    
-    # Prueba de Kolmogorov-Smirnov
-    ks_stat, p_val_ks = ks_2samp(data1, data2)
-
-    chi2_result = "Chi-squared test passed" if p_val_chi2 >= 0.05 else "Chi-squared test failed"
-    ks_result = "KS test passed" if p_val_ks >= 0.05 else "KS test failed"
-
-    # Devolver los resultados de las pruebas
-    return {
-        "chi2_stat": chi2_stat,
-        "p_val_chi2": p_val_chi2,
-        "chi2_result": chi2_result,
-        "ks_stat": ks_stat,
-        "p_val_ks": p_val_ks,
-        "ks_result": ks_result
-    }
+    # Evaluar el modelo
+    evaluate_model(ensemble_model, X_train_scaled, X_test_scaled, y_train, y_test)
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", port=1234, reload=True)
+    main()

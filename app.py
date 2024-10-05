@@ -23,26 +23,47 @@ def scale_data(X_train, X_test):
 
 def build_models():
     """Define los modelos a utilizar en el VotingClassifier"""
+    
+    # Modelo XGBoost
     xgb_model = xgb.XGBClassifier(
-        scale_pos_weight=1,  # Ajuste según balance de clases
-        n_estimators=1000,
-        max_depth=5,
-        learning_rate=0.001,
+        scale_pos_weight=1,  
+        n_estimators=500,
+        max_depth=3,
+        learning_rate=0.01,
         eval_metric='logloss',
         use_label_encoder=False,
         random_state=1234
     )
 
-    rf_model = RandomForestClassifier(n_estimators=100, random_state=1234)
+    # GradientBoostingClassifier
+    gb_model = GradientBoostingClassifier(
+        n_estimators=200,
+        learning_rate=0.05,
+        max_depth=4,
+        random_state=1234
+    )
 
-    lr_model = LogisticRegression(penalty='l2', C=0.1, solver='liblinear')
+    # KNeighborsClassifier
+    knn_model = KNeighborsClassifier(
+        n_neighbors=5
+    )
 
+    # Support Vector Classifier (SVC)
+    svc_model = SVC(
+        probability=True,
+        kernel='linear',
+        C=1.0,
+        random_state=1234
+    )
+
+    # Ensamble con 4 modelos
     ensemble_model = VotingClassifier(
-        estimators=[('xgb', xgb_model), ('rf', rf_model), ('lr', lr_model)], 
+        estimators=[('xgb', xgb_model), ('gb', gb_model), ('svc', svc_model), ('knn', knn_model)], 
         voting='soft'
     )
     
     return ensemble_model
+
 
 def evaluate_model(model, X_train, X_test, y_train, y_test, threshold=0.45):
     """Evalúa el modelo, ajustando el umbral de decisión"""

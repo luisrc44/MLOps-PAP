@@ -28,7 +28,7 @@ def build_models():
     """Define los modelos a utilizar en el VotingClassifier"""
     
     # Modelo XGBoost
-    xgb_model = xgb.XGBClassifier(
+    xgb_model = XGBClassifier(
         scale_pos_weight=1,  
         n_estimators=500,
         max_depth=3,
@@ -60,12 +60,12 @@ def build_models():
     )
 
     # Ensamble con 4 modelos
-    ensemble_model = VotingClassifier(
+    model = VotingClassifier(
         estimators=[('xgb', xgb_model), ('gb', gb_model), ('svc', svc_model), ('knn', knn_model)], 
         voting='soft'
     )
     
-    return ensemble_model
+    return model
 
 
 def evaluate_model(model, X_train, X_test, y_train, y_test, threshold=0.45):
@@ -94,7 +94,7 @@ def evaluate_model(model, X_train, X_test, y_train, y_test, threshold=0.45):
     
 def main():
     # Cargar los datos
-    X, y = load_data("credit_train.csv")
+    X, y = load_data("data/credit_train.csv")
 
     # Dividir los datos en entrenamiento y prueba
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=1234)

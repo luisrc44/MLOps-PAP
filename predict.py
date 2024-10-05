@@ -2,7 +2,7 @@ import pandas as pd
 import pickle
 
 # Cargar el modelo entrenado
-with open('./models/my_ensemble_model.pkl', 'rb') as file:
+with open('./models/model.pkl', 'rb') as file:
     model = pickle.load(file)
 
 # Cargar el dataset
